@@ -71,6 +71,7 @@ sysinfo.txt
 *.inputactions
 /[Aa]ssets/Readme.asset
 /[Aa]ssets/*.asset
+/ProjectSettings/
 
 # Crashlytics generated file
 crashlytics-build.properties
