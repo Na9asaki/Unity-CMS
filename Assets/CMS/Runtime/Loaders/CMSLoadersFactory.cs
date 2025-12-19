@@ -1,5 +1,6 @@
 ﻿using System;
 using UnityEngine;
+using CMS;
 
 namespace CMS.Loaders
 {

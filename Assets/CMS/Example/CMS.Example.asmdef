@@ -1,0 +1,20 @@
+{
+    "name": "CMS.Example",
+    "rootNamespace": "",
+    "references": [
+        "GUID:a08cf1d3a4b3e8b48b39c76eb921d7f3"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [
+        "Editor",
+        "WindowsStandalone32",
+        "WindowsStandalone64"
+    ],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

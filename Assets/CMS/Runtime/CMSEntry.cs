@@ -1,4 +1,5 @@
 using CMS.Loaders;
+using CMS;
 
 namespace CMS
 {

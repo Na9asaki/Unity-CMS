@@ -1,4 +1,6 @@
-﻿namespace Source.CMS.CMSData
+﻿using CMS;
+
+namespace CMS.CMSData
 {
     public abstract class CMSRootData
     {

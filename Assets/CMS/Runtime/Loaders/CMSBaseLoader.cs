@@ -1,4 +1,4 @@
-﻿using Source.CMS.CMSData;
+﻿using CMS.CMSData;
 
 namespace CMS.Loaders
 {

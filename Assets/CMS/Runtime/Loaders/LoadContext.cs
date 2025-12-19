@@ -1,4 +1,6 @@
-﻿namespace CMS.Loaders
+﻿using CMS;
+
+namespace CMS.Loaders
 {
     public class LoadContext
     {
