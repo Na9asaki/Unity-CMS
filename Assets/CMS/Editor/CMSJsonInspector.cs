@@ -35,7 +35,9 @@ namespace CMS.DevTools
         
         private void ResolveTypeFromLoader(string loaderTypeName)
         {
-            var loaderType = Type.GetType(loaderTypeName);
+            var loaderType = AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(a => a.GetTypes())
+                .FirstOrDefault(t => t.FullName.Equals(loaderTypeName));
             if (loaderType == null)
             {
                 Debug.LogError($"Loader type not found: {loaderTypeName}");
