@@ -66,7 +66,8 @@ namespace CMS.DevTools
         {
             EditorGUILayout.BeginHorizontal();
 
-            DrawManifestsPanel();
+            if (GUILayout.Button("New Manifest"))
+                CreateNewManifest();
             DrawEditorPanel();
 
             EditorGUILayout.EndHorizontal();
@@ -239,55 +240,53 @@ namespace CMS.DevTools
 
         private void SaveCurrentManifest()
         {
-            if (string.IsNullOrEmpty(currentManifestPath))
+            if (currentManifest == null)
                 return;
 
-            string dataDir = Path.Combine(
-                Application.dataPath,
-                "Resources/CMS",
-                currentManifest.Path
-            );
+            // Если манифест ещё не был сохранён на диск — создаём папку и файл
+            if (string.IsNullOrEmpty(currentManifestPath))
+            {
+                string cmsRoot = Path.Combine(Application.dataPath, "Resources/CMS");
+                string folderPath = Path.Combine(cmsRoot, currentManifest.Path);
 
+                if (!Directory.Exists(folderPath))
+                    Directory.CreateDirectory(folderPath);
+
+                currentManifestPath = Path.Combine(folderPath, "manifest.json");
+            }
+
+            string dataDir = Path.Combine(Application.dataPath, "Resources/CMS", currentManifest.Path);
             if (!Directory.Exists(dataDir))
                 Directory.CreateDirectory(dataDir);
 
-            // все файлы на диске
+            // Создаём недостающие файлы
             var existingFiles = Directory.Exists(dataDir)
                 ? Directory.GetFiles(dataDir, "*.json")
                     .Select(f => Path.GetFileNameWithoutExtension(f))
                     .ToHashSet()
                 : new HashSet<string>();
 
-            // все ключи из manifest
             var manifestKeys = currentManifest.Data
                 .Select(d => d.Key)
                 .ToHashSet();
 
-            // ➕ создать недостающие
             foreach (var entry in currentManifest.Data)
             {
-                if (existingFiles.Contains(entry.Key))
-                    continue;
-
-                CreateDataFileFromEntry(entry, dataDir);
+                if (!existingFiles.Contains(entry.Key))
+                    CreateDataFileFromEntry(entry, dataDir);
             }
 
-            // ❌ удалить лишние
+            // Удаляем лишние
             foreach (var file in existingFiles)
             {
                 if (!manifestKeys.Contains(file))
-                {
                     File.Delete(Path.Combine(dataDir, file + ".json"));
-                }
             }
 
-            // сохранить manifest
-            File.WriteAllText(
-                currentManifestPath,
-                JsonUtility.ToJson(currentManifest, true)
-            );
-
+            // Сохраняем сам манифест
+            File.WriteAllText(currentManifestPath, JsonUtility.ToJson(currentManifest, true));
             AssetDatabase.Refresh();
+
             Debug.Log("CMS: Manifest saved & synced");
         }
         
@@ -296,7 +295,7 @@ namespace CMS.DevTools
             if (string.IsNullOrEmpty(entry.Loader))
                 return;
 
-            var loaderType = Type.GetType(entry.Loader);
+            var loaderType = ResolveLoaderType(entry.Loader);
             var dataType = CMSLoaderReflection.GetDataTypeFromLoader(loaderType);
 
             if (dataType == null)
@@ -310,6 +309,29 @@ namespace CMS.DevTools
 
             File.WriteAllText(path, JsonUtility.ToJson(instance, true));
         }
+
+
+        
+        private Type ResolveLoaderType(string loaderFullName)
+        {
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(a => a.GetTypes())
+                .FirstOrDefault(t => t.FullName == loaderFullName);
+        }
+        
+        private void CreateNewManifest()
+        {
+            // Генерируем новый манифест в редакторе
+            currentManifest = new ManifestDto
+            {
+                Id = Guid.NewGuid().ToString(), // авто ID
+                Path = "NewFolder",             // имя по умолчанию, пользователь потом поменяет
+                Data = new List<ManifestDataEntry>()
+            };
+
+            currentManifestPath = null; // ещё нет сохранённого файла
+        }
+
 
         private void CreateNewFolder()
         {

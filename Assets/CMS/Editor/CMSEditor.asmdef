@@ -2,7 +2,8 @@
     "name": "CMS.Editor",
     "rootNamespace": "",
     "references": [
-        "GUID:a08cf1d3a4b3e8b48b39c76eb921d7f3"
+        "GUID:a08cf1d3a4b3e8b48b39c76eb921d7f3",
+        "GUID:143a85e22619d9745932f7337323a652"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

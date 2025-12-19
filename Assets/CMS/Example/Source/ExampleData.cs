@@ -1,4 +1,5 @@
-﻿using Source.CMS.CMSData;
+﻿
+using CMS.CMSData;
 
 namespace Source.Example
 {
