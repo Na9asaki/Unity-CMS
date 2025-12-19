@@ -64,6 +64,14 @@ sysinfo.txt
 *.unitypackage.meta
 *.app
 
+# Base project configurations folders
+/[Aa]ssets/[Ss]cenes/
+[Ss]ettings/
+[Tt]utorialInfo/
+*.inputactions
+/[Aa]ssets/Readme.asset
+/[Aa]ssets/*.asset
+
 # Crashlytics generated file
 crashlytics-build.properties
 
