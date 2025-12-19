@@ -65,9 +65,7 @@ namespace CMS.DevTools
         private void OnGUI()
         {
             EditorGUILayout.BeginHorizontal();
-
-            if (GUILayout.Button("New Manifest"))
-                CreateNewManifest();
+            DrawManifestsPanel();
             DrawEditorPanel();
 
             EditorGUILayout.EndHorizontal();
@@ -88,8 +86,16 @@ namespace CMS.DevTools
             }
             EditorGUILayout.EndScrollView();
 
-            if (GUILayout.Button("Add New Folder"))
-                CreateNewFolder();
+            
+            if (GUILayout.Button("New Manifest"))
+            {
+                CreateNewManifest();
+            }
+
+            if (GUILayout.Button("Refresh Manifests"))
+            {
+                LoadAllManifests();
+            }
 
             EditorGUILayout.EndVertical();
         }

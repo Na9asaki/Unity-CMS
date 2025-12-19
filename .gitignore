@@ -72,6 +72,7 @@ sysinfo.txt
 /[Aa]ssets/Readme.asset
 /[Aa]ssets/*.asset
 /ProjectSettings/
+/[Aa]ssets/Resources/
 
 # Crashlytics generated file
 crashlytics-build.properties
