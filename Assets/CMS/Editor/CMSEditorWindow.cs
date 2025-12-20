@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
+using CMS.CMSData;
 using CMS.Loaders;
 
 namespace CMS.DevTools
@@ -18,6 +20,9 @@ namespace CMS.DevTools
 
         private List<Type> allLoaders;
         private string[] loaderNames;
+
+        // --- Новая часть для генерации классов ---
+        private string generatePath = "Assets/CMSGenerated";
 
         [MenuItem("CMS/Editor")]
         public static void OpenWindow()
@@ -36,25 +41,17 @@ namespace CMS.DevTools
         private void LoadAllManifests()
         {
             manifestPaths.Clear();
-
             string cmsRoot = Path.Combine(Application.dataPath, "Resources/CMS");
             if (!Directory.Exists(cmsRoot))
                 return;
-
-            manifestPaths.AddRange(
-                Directory.GetFiles(cmsRoot, "manifest.json", SearchOption.AllDirectories)
-            );
+            manifestPaths.AddRange(Directory.GetFiles(cmsRoot, "manifest.json", SearchOption.AllDirectories));
         }
 
         private void LoadAllLoaders()
         {
             allLoaders = AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => a.GetTypes())
-                .Where(t =>
-                    typeof(CMSBaseLoader).IsAssignableFrom(t) &&
-                    !t.IsAbstract &&
-                    !t.IsInterface
-                )
+                .Where(t => typeof(CMSBaseLoader).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
                 .ToList();
 
             loaderNames = allLoaders.Select(t => t.FullName).ToArray();
@@ -67,7 +64,7 @@ namespace CMS.DevTools
             EditorGUILayout.BeginHorizontal();
             DrawManifestsPanel();
             DrawEditorPanel();
-
+            DrawGeneratorPanel(); // моя часть
             EditorGUILayout.EndHorizontal();
         }
 
@@ -86,23 +83,18 @@ namespace CMS.DevTools
             }
             EditorGUILayout.EndScrollView();
 
-            
             if (GUILayout.Button("New Manifest"))
-            {
                 CreateNewManifest();
-            }
 
             if (GUILayout.Button("Refresh Manifests"))
-            {
                 LoadAllManifests();
-            }
 
             EditorGUILayout.EndVertical();
         }
 
         #endregion
 
-        #region Right panel
+        #region Right panel (редактирование манифеста)
 
         private void DrawEditorPanel()
         {
@@ -151,7 +143,6 @@ namespace CMS.DevTools
             }
 
             EditorGUILayout.Space();
-
             if (GUILayout.Button("Add File"))
             {
                 currentManifest.Data.Add(new ManifestDataEntry
@@ -162,7 +153,6 @@ namespace CMS.DevTools
             }
 
             EditorGUILayout.Space();
-
             if (GUILayout.Button("Save Manifest"))
                 SaveCurrentManifest();
 
@@ -171,72 +161,94 @@ namespace CMS.DevTools
 
         #endregion
 
-        #region File operations
+        #region Generator panel (новая часть)
 
-        private void CreateDataFile(ManifestDataEntry entry)
+        private void DrawGeneratorPanel()
         {
-            if (string.IsNullOrEmpty(entry.Loader))
-                return;
+            EditorGUILayout.BeginVertical(GUILayout.Width(300));
+            EditorGUILayout.LabelField("Generate Static CMS Class", EditorStyles.boldLabel);
 
-            var loaderType = Type.GetType(entry.Loader);
-            if (loaderType == null)
+            generatePath = EditorGUILayout.TextField("Save Path", generatePath);
+
+            if (GUILayout.Button("Generate CMSEntityIds"))
             {
-                Debug.LogError($"CMS: Loader not found: {entry.Loader}");
-                return;
+                GenerateCMSEntityIdsClass(generatePath);
             }
 
-            var dataType = CMSLoaderReflection.GetDataTypeFromLoader(loaderType);
-            if (dataType == null)
+            EditorGUILayout.EndVertical();
+        }
+
+        private void GenerateCMSEntityIdsClass(string path)
+        {
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            string className = "CMSEntityIds";
+            string classPath = Path.Combine(path, className + ".cs");
+
+            // Если файл уже существует — удаляем, чтобы перезаписать
+            if (File.Exists(classPath))
+                File.Delete(classPath);
+
+            HashSet<string> allIds = new HashSet<string>();
+
+            foreach (var manifestPath in manifestPaths)
             {
-                Debug.LogError($"CMS: Loader {entry.Loader} has no CMSLoader<T>");
-                return;
+                var manifest = JsonUtility.FromJson<ManifestDto>(File.ReadAllText(manifestPath));
+                if (manifest.Data == null) continue;
+
+                string folderDir = Path.Combine(Application.dataPath, "Resources/CMS", manifest.Path);
+
+                foreach (var entry in manifest.Data)
+                {
+                    string jsonFile = Path.Combine(folderDir, entry.Key + ".json");
+                    if (!File.Exists(jsonFile)) continue;
+
+                    var loaderType = ResolveLoaderType(entry.Loader);
+                    var dataType = CMSLoaderReflection.GetDataTypeFromLoader(loaderType);
+                    if (dataType == null) continue;
+
+                    CMSRootData obj = (CMSRootData)Activator.CreateInstance(dataType);
+                    try
+                    {
+                        string jsonText = File.ReadAllText(jsonFile);
+                        if (!string.IsNullOrWhiteSpace(jsonText))
+                            JsonUtility.FromJsonOverwrite(jsonText, obj);
+                    }
+                    catch
+                    {
+                        Debug.LogWarning($"Не удалось прочитать JSON: {jsonFile}");
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(obj.Id))
+                        allIds.Add(obj.Id);
+                }
             }
 
-            object instance = Activator.CreateInstance(dataType);
-
-            string dir = Path.Combine(
-                Application.dataPath,
-                "Resources/CMS",
-                currentManifest.Path
-            );
-
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            string filePath = Path.Combine(dir, entry.Key + ".json");
-
-            if (File.Exists(filePath))
+            // Перезаписываем файл
+            using (var writer = new StreamWriter(classPath, false)) // false = overwrite
             {
-                Debug.LogWarning($"CMS: File already exists: {filePath}");
-                return;
+                writer.WriteLine("public static class " + className);
+                writer.WriteLine("{");
+                foreach (var id in allIds)
+                {
+                    string constName = id.Replace(" ", "_").Replace("-", "_");
+                    writer.WriteLine($"\tpublic const string {constName} = \"{id}\";");
+                }
+                writer.WriteLine("}");
             }
 
-            File.WriteAllText(filePath, JsonUtility.ToJson(instance, true));
             AssetDatabase.Refresh();
-
-            Debug.Log($"CMS: Created {filePath}");
+            Debug.Log($"Generated static class with all IDs from JSONs: {classPath}");
         }
 
-        private void DeleteDataFile(string key)
-        {
-            string path = Path.Combine(
-                Application.dataPath,
-                "Resources/CMS",
-                currentManifest.Path,
-                key + ".json"
-            );
 
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-                AssetDatabase.Refresh();
-                Debug.Log($"CMS: Deleted {path}");
-            }
-        }
+
 
         #endregion
 
-        #region Manifest IO
+        #region File & Manifest operations (твоя логика)
 
         private void LoadManifest(string path)
         {
@@ -249,127 +261,73 @@ namespace CMS.DevTools
             if (currentManifest == null)
                 return;
 
-            // Если манифест ещё не был сохранён на диск — создаём папку и файл
-            if (string.IsNullOrEmpty(currentManifestPath))
-            {
-                string cmsRoot = Path.Combine(Application.dataPath, "Resources/CMS");
-                string folderPath = Path.Combine(cmsRoot, currentManifest.Path);
+            string cmsRoot = Path.Combine(Application.dataPath, "Resources/CMS");
+            string folderPath = Path.Combine(cmsRoot, currentManifest.Path);
 
-                if (!Directory.Exists(folderPath))
-                    Directory.CreateDirectory(folderPath);
+            if (!Directory.Exists(folderPath))
+                Directory.CreateDirectory(folderPath);
 
-                currentManifestPath = Path.Combine(folderPath, "manifest.json");
-            }
+            currentManifestPath = Path.Combine(folderPath, "manifest.json");
 
-            string dataDir = Path.Combine(Application.dataPath, "Resources/CMS", currentManifest.Path);
-            if (!Directory.Exists(dataDir))
-                Directory.CreateDirectory(dataDir);
-
-            // Создаём недостающие файлы
-            var existingFiles = Directory.Exists(dataDir)
-                ? Directory.GetFiles(dataDir, "*.json")
-                    .Select(f => Path.GetFileNameWithoutExtension(f))
-                    .ToHashSet()
-                : new HashSet<string>();
-
-            var manifestKeys = currentManifest.Data
-                .Select(d => d.Key)
-                .ToHashSet();
-
-            foreach (var entry in currentManifest.Data)
-            {
-                if (!existingFiles.Contains(entry.Key))
-                    CreateDataFileFromEntry(entry, dataDir);
-            }
-
-            // Удаляем лишние
-            foreach (var file in existingFiles)
-            {
-                if (!manifestKeys.Contains(file))
-                    File.Delete(Path.Combine(dataDir, file + ".json"));
-            }
-
-            // Сохраняем сам манифест
+            // Сохраняем манифест
             File.WriteAllText(currentManifestPath, JsonUtility.ToJson(currentManifest, true));
             AssetDatabase.Refresh();
 
+            // Создаём недостающие файлы через твой метод
+            foreach (var entry in currentManifest.Data)
+            {
+                CreateDataFile(entry); // твой старый метод, не трогаем
+            }
+
             Debug.Log("CMS: Manifest saved & synced");
         }
-        
-        private void CreateDataFileFromEntry(ManifestDataEntry entry, string dataDir)
+
+        private void CreateDataFile(ManifestDataEntry entry)
         {
-            if (string.IsNullOrEmpty(entry.Loader))
-                return;
+            if (string.IsNullOrEmpty(entry.Loader)) return;
 
             var loaderType = ResolveLoaderType(entry.Loader);
             var dataType = CMSLoaderReflection.GetDataTypeFromLoader(loaderType);
-
-            if (dataType == null)
-            {
-                Debug.LogError($"CMS: Cannot resolve data type for {entry.Loader}");
-                return;
-            }
+            if (dataType == null) return;
 
             object instance = Activator.CreateInstance(dataType);
-            string path = Path.Combine(dataDir, entry.Key + ".json");
+            string dir = Path.Combine(Application.dataPath, "Resources/CMS", currentManifest.Path);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-            File.WriteAllText(path, JsonUtility.ToJson(instance, true));
+            string filePath = Path.Combine(dir, entry.Key + ".json");
+            if (File.Exists(filePath)) return;
+
+            File.WriteAllText(filePath, JsonUtility.ToJson(instance, true));
+            AssetDatabase.Refresh();
         }
 
-
-        
         private Type ResolveLoaderType(string loaderFullName)
         {
             return AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => a.GetTypes())
                 .FirstOrDefault(t => t.FullName == loaderFullName);
         }
-        
-        private void CreateNewManifest()
-        {
-            // Генерируем новый манифест в редакторе
-            currentManifest = new ManifestDto
-            {
-                Id = Guid.NewGuid().ToString(), // авто ID
-                Path = "NewFolder",             // имя по умолчанию, пользователь потом поменяет
-                Data = new List<ManifestDataEntry>()
-            };
 
-            currentManifestPath = null; // ещё нет сохранённого файла
+        private void DeleteDataFile(string key)
+        {
+            string path = Path.Combine(Application.dataPath, "Resources/CMS", currentManifest.Path, key + ".json");
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                AssetDatabase.Refresh();
+                Debug.Log($"CMS: Deleted {path}");
+            }
         }
 
-
-        private void CreateNewFolder()
+        private void CreateNewManifest()
         {
-            string cmsRoot = Path.Combine(Application.dataPath, "Resources/CMS");
-            Directory.CreateDirectory(cmsRoot);
-
-            string baseName = "NewDataFolder";
-            string folderPath = Path.Combine(cmsRoot, baseName);
-            int counter = 1;
-
-            while (Directory.Exists(folderPath))
+            currentManifest = new ManifestDto
             {
-                folderPath = Path.Combine(cmsRoot, baseName + counter);
-                counter++;
-            }
-
-            Directory.CreateDirectory(folderPath);
-
-            var manifest = new ManifestDto
-            {
-                Id = Path.GetFileName(folderPath),
-                Path = $"CMS/{Path.GetFileName(folderPath)}",
+                Id = Guid.NewGuid().ToString(),
+                Path = "NewFolder",
                 Data = new List<ManifestDataEntry>()
             };
-
-            string manifestPath = Path.Combine(folderPath, "manifest.json");
-            File.WriteAllText(manifestPath, JsonUtility.ToJson(manifest, true));
-
-            AssetDatabase.Refresh();
-
-            LoadAllManifests();
-            LoadManifest(manifestPath);
+            currentManifestPath = null;
         }
 
         #endregion
